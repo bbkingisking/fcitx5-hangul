@@ -13,6 +13,7 @@
 #include <fcitx-utils/macros.h>
 #include <fcitx-utils/testing.h>
 #include <fcitx/addonmanager.h>
+#include <fcitx/candidatelist.h>
 #include <fcitx/inputmethodgroup.h>
 #include <fcitx/inputmethodmanager.h>
 #include <fcitx/inputpanel.h>
@@ -50,6 +51,22 @@ void scheduleEvent(Instance *instance) {
             uuid, Key("Q"), false));
         FCITX_ASSERT(testfrontend->call<ITestFrontend::sendKeyEvent>(
             uuid, Key(FcitxKey_Q, KeyState::CapsLock), false));
+        instance->deactivate();
+
+        instance->activate();
+        for (const char *key : {"d", "l", "f", "F9"}) {
+            FCITX_ASSERT(testfrontend->call<ITestFrontend::sendKeyEvent>(
+                uuid, Key(key), false));
+        }
+        const auto &candidates = ic->inputPanel().candidateList();
+        FCITX_ASSERT(candidates && candidates->size() >= 2);
+        FCITX_ASSERT(candidates->candidate(0).text().toString() == "一");
+        FCITX_ASSERT(candidates->candidate(0).comment().toString() == "한 일");
+        FCITX_ASSERT(candidates->candidate(1).text().toString() == "日");
+        FCITX_ASSERT(candidates->candidate(1).comment().toString() == "날 일");
+        testfrontend->call<ITestFrontend::pushCommitExpectation>("日");
+        FCITX_ASSERT(testfrontend->call<ITestFrontend::sendKeyEvent>(
+            uuid, Key("2"), false));
         instance->deactivate();
     });
 

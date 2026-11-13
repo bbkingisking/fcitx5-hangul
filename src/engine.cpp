@@ -112,9 +112,13 @@ HanjaTable *loadTable() {
 
 class HangulCandidate : public CandidateWord {
 public:
-    HangulCandidate(HangulEngine *engine, int idx, std::string text)
+    HangulCandidate(HangulEngine *engine, int idx, std::string text,
+                    const char *comment)
         : engine_(engine), idx_(idx) {
         setText(Text(std::move(text)));
+        if (comment && *comment) {
+            setComment(Text(comment));
+        }
     }
 
     void select(InputContext *inputContext) const override;
@@ -527,7 +531,8 @@ public:
             auto n = hanja_list_get_size(list);
             for (auto i = 0; i < n; i++) {
                 const char *value = hanja_list_get_nth_value(list, i);
-                candidate->append<HangulCandidate>(engine_, i, value);
+                const char *comment = hanja_list_get_nth_comment(list, i);
+                candidate->append<HangulCandidate>(engine_, i, value, comment);
             }
             if (n) {
                 candidate->setGlobalCursorIndex(0);
