@@ -108,13 +108,38 @@ HanjaTable *loadTable() {
     return table ? table : hanja_table_load(nullptr);
 }
 
+// Only pad ideographs, whose advances match U+3000 in our CJK font.
+// Symbol/Latin candidates must keep their natural proportional layout.
+size_t hanjaCells(const std::string &text) {
+    size_t cells = 0;
+    for (auto it = text.begin(); it != text.end(); it = utf8::nextChar(it)) {
+        const auto ch = utf8::getChar(it, text.end());
+        if (!((ch >= 0x3400 && ch <= 0x4dbf) ||
+              (ch >= 0x4e00 && ch <= 0x9fff) ||
+              (ch >= 0xf900 && ch <= 0xfaff) ||
+              (ch >= 0x20000 && ch <= 0x2ffff) ||
+              (ch >= 0x30000 && ch <= 0x3347f))) {
+            return 0;
+        }
+        ++cells;
+    }
+    return cells;
+}
+
 } // namespace
 
 class HangulCandidate : public CandidateWord {
 public:
     HangulCandidate(HangulEngine *engine, int idx, std::string text,
-                    const char *comment)
+                    const char *comment, size_t columnCells)
         : engine_(engine), idx_(idx) {
+        const auto cells = hanjaCells(text);
+        if (columnCells && cells) {
+            // Display-only: select() commits the original dictionary value.
+            for (auto i = cells; i < columnCells; ++i) {
+                text += "　"; // U+3000 IDEOGRAPHIC SPACE
+            }
+        }
         setText(Text(std::move(text)));
         if (comment && *comment) {
             setComment(Text(comment));
@@ -529,10 +554,25 @@ public:
             candidate->setPageSize(
                 engine_->instance()->globalConfig().defaultPageSize());
             auto n = hanja_list_get_size(list);
-            for (auto i = 0; i < n; i++) {
-                const char *value = hanja_list_get_nth_value(list, i);
-                const char *comment = hanja_list_get_nth_comment(list, i);
-                candidate->append<HangulCandidate>(engine_, i, value, comment);
+            const int pageSize = std::max(1, candidate->pageSize());
+            for (int pageStart = 0; pageStart < n; pageStart += pageSize) {
+                const int pageEnd = std::min(pageStart + pageSize, n);
+                size_t columnCells = 0;
+                bool hasComment = false;
+                for (int j = pageStart; j < pageEnd; ++j) {
+                    columnCells = std::max(
+                        columnCells, hanjaCells(hanja_list_get_nth_value(list, j)));
+                    const char *gloss = hanja_list_get_nth_comment(list, j);
+                    hasComment |= gloss && *gloss;
+                }
+                // One full CJK cell separates the Hanja and gloss columns.
+                columnCells = hasComment ? columnCells + 1 : 0;
+                for (int i = pageStart; i < pageEnd; ++i) {
+                    const char *value = hanja_list_get_nth_value(list, i);
+                    const char *comment = hanja_list_get_nth_comment(list, i);
+                    candidate->append<HangulCandidate>(engine_, i, value, comment,
+                                                       columnCells);
+                }
             }
             if (n) {
                 candidate->setGlobalCursorIndex(0);
